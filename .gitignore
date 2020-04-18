@@ -1,3 +1,6 @@
+# My own bash scripts
+*.sh
+
 # Compiled Object files
 *.lo
 *.o
