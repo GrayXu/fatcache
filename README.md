@@ -115,8 +115,10 @@ To build fatcache from source with _debug logs enabled_ and _assertions disabled
 
 ## Future Work
 
-- fatcache deals with two kinds of IOs - disk IO and network IO. Network IO in fatcache is async, but disk IO is sync. It is recommended to run multiple instances of fatcache on a single machine to exploit CPU and SSD parallelism. However, by making disk IO async (using libaio, perhaps), it would be possible for a single instance to completely exploit all available SSD device parallelism.
-- observability in fatcache through stats
+- [x] async NET I/O, view this repo [polyu-szy/Fatcache-Async-2017](https://github.com/polyu-szy/Fatcache-Async-2017). ~~fatcache deals with two kinds of IOs - disk IO and network IO. Network IO in fatcache is async, but disk IO is sync. It is recommended to run multiple instances of fatcache on a single machine to exploit CPU and SSD parallelism. However, by making disk IO async (using libaio, perhaps), it would be possible for a single instance to completely exploit all available SSD device parallelism.~~
+- [x] Implements by githulk in this [pr](https://github.com/twitter/fatcache/commit/f7d45af57b0aac79d176bc97c3df73968e7faaa1). ~~observability in fatcache through stats~~
+- [ ] Use hot ring itemx to reduce hot data indexing cose.
+- [ ] Slab granularity
 
 ## Issues and Support
 
