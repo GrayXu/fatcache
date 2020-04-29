@@ -24,7 +24,7 @@ struct itemx {
     STAILQ_ENTRY(itemx) tqe;    /* link in index / free q */
     uint8_t             md[20]; /* sha1 message digest */
     uint32_t            sid;    /* owner slab id */
-    uint32_t            offset; /* item offset from owner slab base */
+    uint32_t            offset; /* value在slab里面的偏移位置 item offset from owner slab base  */
     rel_time_t          expiry; /* expiry in secs */
     uint64_t            cas;    /* cas */
     struct itemx*		prev; //pre pointer

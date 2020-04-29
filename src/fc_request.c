@@ -175,6 +175,7 @@ req_process_get(struct context *ctx, struct conn *conn, struct msg *msg)
     struct itemx *itx;
     struct item *it;
 
+    //去找索引
     itx = itemx_getx(msg->hash, msg->md);
     if (itx == NULL) {
         msg_type_t type;
@@ -200,6 +201,7 @@ req_process_get(struct context *ctx, struct conn *conn, struct msg *msg)
     /*
      * On a hit, we read the item with address [sid, offset] and respond
      * with item value if the item hasn't expired yet.
+     * 根据sid找到slab，还有offset来找到对应的item
      */
     it = slab_read_item(itx->sid, itx->offset);
     if (it == NULL) {

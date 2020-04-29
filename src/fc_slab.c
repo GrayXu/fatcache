@@ -19,37 +19,51 @@
 
 extern struct settings settings;
 
-static uint32_t nfree_msinfoq;         /* # free memory slabinfo q */
-static struct slabhinfo free_msinfoq;  /* free memory slabinfo q */
-static uint32_t nfull_msinfoq;         /* # full memory slabinfo q */
-static struct slabhinfo full_msinfoq;  /* # full memory slabinfo q */
+// 大量尾队列出没
+static uint32_t nfree_msinfoq; /* # free memory slabinfo q */
+static struct slabhinfo free_msinfoq; /* free memory slabinfo q */
+static uint32_t nfull_msinfoq; /* # full memory slabinfo q */
+static struct slabhinfo full_msinfoq; /* # full memory slabinfo q */
 
-static uint32_t nfree_dsinfoq;         /* # free disk slabinfo q */
-static struct slabhinfo free_dsinfoq;  /* free disk slabinfo q */
-static uint32_t nfull_dsinfoq;         /* # full disk slabinfo q */
-static struct slabhinfo full_dsinfoq;  /* full disk slabinfo q */
+static uint32_t nfree_dsinfoq; /* # free disk slabinfo q */
+static struct slabhinfo free_dsinfoq; /* free disk slabinfo q */
+static uint32_t nfull_dsinfoq; /* # full disk slabinfo q */
+static struct slabhinfo full_dsinfoq; /* full disk slabinfo q */
 
-static uint8_t nctable;                /* # class table entry */
-static struct slabclass *ctable;       /* table of slabclass indexed by cid */
+static uint8_t nctable; /* # class table entry */
+static struct slabclass* ctable; /* table of slabclass indexed by cid */
 
-static uint32_t nstable;               /* # slab table entry */
-static struct slabinfo *stable;        /* table of slabinfo indexed by sid */
+static uint32_t nstable; /* # slab table entry */
+static struct slabinfo* stable; /* table of slabinfo indexed by sid */
 
-static uint8_t *mstart;                /* memory slab start */
-static uint8_t *mend;                  /* memory slab end */
+static uint8_t* mstart; /* memory slab start */
+static uint8_t* mend; /* memory slab end */
 
-static off_t dstart;                   /* disk start */
-static off_t dend;                     /* disk end */
-static int fd;                         /* disk file descriptor */
+static off_t dstart; /* disk start */
+static off_t dend; /* disk end */
+static int fd; /* disk file descriptor */
 
-static size_t mspace;                  /* memory space */
-static size_t dspace;                  /* disk space */
-static uint32_t nmslab;                /* # memory slabs */
-static uint32_t ndslab;                /* # disk slabs */
+static size_t mspace; /* memory space */
+static size_t dspace; /* disk space */
+static uint32_t nmslab; /* # memory slabs */
+static uint32_t ndslab; /* # disk slabs */
 
 static uint64_t nevict;
-static uint8_t *evictbuf;              /* evict buffer */
-static uint8_t *readbuf;               /* read buffer */
+static uint8_t* evictbuf; /* evict buffer */
+static uint8_t* readbuf; /* read buffer */
+
+/* for itemx to call, itemx can't access stable */
+struct slabinfo*
+sid_to_sinfo(uint32_t sid){
+    return &stable[sid];
+}
+
+/* for itemx to call, itemx can't access ctable */
+size_t
+cid_to_size(uint8_t cid){
+    return (&ctable[cid])->size;
+}
+
 
 /*
  * Return the maximum space available for item sized chunks in a given
@@ -65,8 +79,7 @@ slab_data_size(void)
  * Return true if slab class id cid is valid and within bounds, otherwise
  * return false.
  */
-bool
-slab_valid_id(uint8_t cid)
+bool slab_valid_id(uint8_t cid)
 {
     if (cid >= SLABCLASS_MIN_ID && cid <= settings.profile_last_id) {
         return true;
@@ -75,24 +88,25 @@ slab_valid_id(uint8_t cid)
     return false;
 }
 
-void
-slab_print(void)
+void slab_print(void)
 {
-    uint8_t cid;         /* slab class id */
-    struct slabclass *c; /* slab class */
+    uint8_t cid; /* slab class id */
+    struct slabclass* c; /* slab class */
 
     loga("slab size %zu, slab hdr size %zu, item hdr size %zu, "
-         "item chunk size %zu", settings.slab_size, SLAB_HDR_SIZE,
-         ITEM_HDR_SIZE, settings.chunk_size);
+         "item chunk size %zu",
+        settings.slab_size, SLAB_HDR_SIZE,
+        ITEM_HDR_SIZE, settings.chunk_size);
 
     loga("index memory %zu, slab memory %zu, disk space %zu",
-         0, mspace, dspace);
+        0, mspace, dspace);
 
     for (cid = SLABCLASS_MIN_ID; cid < nctable; cid++) {
         c = &ctable[cid];
-        loga("class %3"PRId8": items %7"PRIu32"  size %7zu  data %7zu  "
-             "slack %7zu", cid, c->nitem, c->size, c->size - ITEM_HDR_SIZE,
-             c->slack);
+        loga("class %3" PRId8 ": items %7" PRIu32 "  size %7zu  data %7zu  "
+             "slack %7zu",
+            cid, c->nitem, c->size, c->size - ITEM_HDR_SIZE,
+            c->slack);
     }
 }
 
@@ -136,9 +150,9 @@ slab_cid(size_t size)
  * return false.
  */
 static bool
-slab_full(struct slabinfo *sinfo)
+slab_full(struct slabinfo* sinfo)
 {
-    struct slabclass *c;
+    struct slabclass* c;
 
     ASSERT(sinfo->cid >= SLABCLASS_MIN_ID && sinfo->cid < nctable);
     c = &ctable[sinfo->cid];
@@ -150,14 +164,14 @@ slab_full(struct slabinfo *sinfo)
  * Return and optionally verify the memory slab with the given slab_size
  * offset from base mstart.
  */
-static void *
+static void*
 slab_from_maddr(uint32_t addr, bool verify)
 {
-    struct slab *slab;
+    struct slab* slab;
     off_t off;
 
     off = (off_t)addr * settings.slab_size;
-    slab = (struct slab *)(mstart + off);
+    slab = (struct slab*)(mstart + off);
     if (verify) {
         ASSERT(mstart + off < mend);
         ASSERT(slab->magic == SLAB_MAGIC);
@@ -175,7 +189,7 @@ slab_from_maddr(uint32_t addr, bool verify)
  * of the disk.
  */
 static off_t
-slab_to_daddr(struct slabinfo *sinfo)
+slab_to_daddr(struct slabinfo* sinfo)
 {
     off_t off;
 
@@ -190,17 +204,20 @@ slab_to_daddr(struct slabinfo *sinfo)
 /*
  * Return and optionally verify the idx^th item with a given size in the
  * in given slab.
+ * Note: idx == sinfo->nalloc 即已经分配了几个，size是这一级的大小
+ * 
  */
-static struct item *
-slab_to_item(struct slab *slab, uint32_t idx, size_t size, bool verify)
+static struct item*
+slab_to_item(struct slab* slab, uint32_t idx, size_t size, bool verify)
 {
-    struct item *it;
+    struct item* it;
 
     ASSERT(slab->magic == SLAB_MAGIC);
-    ASSERT(idx <= stable[slab->sid].nalloc);
+    ASSERT(idx <= stable[slab->sid].nalloc); //stable存info用的
     ASSERT(idx * size < settings.slab_size);
 
-    it = (struct item *)((uint8_t *)slab->data + (idx * size));
+    it = (struct item*)((uint8_t*)slab->data + (idx * size));
+
     if (verify) {
         ASSERT(it->magic == ITEM_MAGIC);
         ASSERT(it->cid == slab->cid);
@@ -210,16 +227,17 @@ slab_to_item(struct slab *slab, uint32_t idx, size_t size, bool verify)
     return it;
 }
 
+//索引消耗完，需要做删除
 static rstatus_t
 slab_evict(void)
 {
-    struct slabclass *c;    /* slab class */
-    struct slabinfo *sinfo; /* disk slabinfo */
-    struct slab *slab;      /* read slab */
-    size_t size;            /* bytes to read */
-    off_t off;              /* offset */
-    int n;                  /* read bytes */
-    uint32_t idx;           /* idx^th item */
+    struct slabclass* c; /* slab class */
+    struct slabinfo* sinfo; /* disk slabinfo */
+    struct slab* slab; /* read slab */
+    size_t size; /* bytes to read */
+    off_t off; /* offset */
+    int n; /* read bytes */
+    uint32_t idx; /* idx^th item */
 
     ASSERT(!TAILQ_EMPTY(&full_dsinfoq));
     ASSERT(nfull_dsinfoq > 0);
@@ -231,13 +249,13 @@ slab_evict(void)
     ASSERT(sinfo->addr < ndslab);
 
     /* read the slab */
-    slab = (struct slab *)evictbuf;
+    slab = (struct slab*)evictbuf;
     size = settings.slab_size;
     off = slab_to_daddr(sinfo);
     n = pread(fd, slab, size, off);
     if (n < size) {
-        log_error("pread fd %d %zu bytes at offset %"PRIu64" failed: %s", fd,
-                  size, (uint64_t)off, strerror(errno));
+        log_error("pread fd %d %zu bytes at offset %" PRIu64 " failed: %s", fd,
+            size, (uint64_t)off, strerror(errno));
         return FC_ERROR;
     }
     ASSERT(slab->magic == SLAB_MAGIC);
@@ -247,14 +265,14 @@ slab_evict(void)
 
     /* evict all items from the slab */
     for (c = &ctable[slab->cid], idx = 0; idx < c->nitem; idx++) {
-        struct item *it = slab_to_item(slab, idx, c->size, true);
+        struct item* it = slab_to_item(slab, idx, c->size, true);
         if (itemx_getx(it->hash, it->md) != NULL) {
             itemx_removex(it->hash, it->md);
         }
     }
 
-    log_debug(LOG_DEBUG, "evict slab at disk (sid %"PRIu32", addr %"PRIu32")",
-              sinfo->sid, sinfo->addr);
+    log_debug(LOG_DEBUG, "evict slab at disk (sid %" PRIu32 ", addr %" PRIu32 ")",
+        sinfo->sid, sinfo->addr);
 
     /* move disk slab from full to free q */
     nfree_dsinfoq++;
@@ -267,7 +285,7 @@ slab_evict(void)
 }
 
 static void
-slab_swap_addr(struct slabinfo *msinfo, struct slabinfo *dsinfo)
+slab_swap_addr(struct slabinfo* msinfo, struct slabinfo* dsinfo)
 {
     uint32_t m_addr;
 
@@ -288,10 +306,10 @@ static rstatus_t
 _slab_drain(void)
 {
     struct slabinfo *msinfo, *dsinfo; /* memory and disk slabinfo */
-    struct slab *slab;                /* slab to write */
-    size_t size;                      /* bytes to write */
-    off_t off;                        /* offset to write at */
-    int n;                            /* written bytes */
+    struct slab* slab; /* slab to write */
+    size_t size; /* bytes to write */
+    off_t off; /* offset to write at */
+    int n; /* written bytes */
 
     ASSERT(!TAILQ_EMPTY(&full_msinfoq));
     ASSERT(nfull_msinfoq > 0);
@@ -318,16 +336,17 @@ _slab_drain(void)
     off = slab_to_daddr(dsinfo);
     n = pwrite(fd, slab, size, off);
     if (n < size) {
-        log_error("pwrite fd %d %zu bytes at offset %"PRId64" failed: %s",
-                  fd, size, off, strerror(errno));
+        log_error("pwrite fd %d %zu bytes at offset %" PRId64 " failed: %s",
+            fd, size, off, strerror(errno));
         return FC_ERROR;
     }
 
     ctable[msinfo->cid].nmslab--;
     ctable[msinfo->cid].ndslab++;
-    log_debug(LOG_DEBUG, "drain slab at memory (sid %"PRIu32" addr %"PRIu32") "
-              "to disk (sid %"PRIu32" addr %"PRIu32")", msinfo->sid,
-              msinfo->addr, dsinfo->sid, dsinfo->addr);
+    log_debug(LOG_DEBUG, "drain slab at memory (sid %" PRIu32 " addr %" PRIu32 ") "
+                         "to disk (sid %" PRIu32 " addr %" PRIu32 ")",
+        msinfo->sid,
+        msinfo->addr, dsinfo->sid, dsinfo->addr);
 
     /* swap msinfo <> dsinfo addresses */
     slab_swap_addr(msinfo, dsinfo);
@@ -364,29 +383,45 @@ slab_drain(void)
     return _slab_drain();
 }
 
-static struct item *
+//从partial slab中取位置来放item
+static struct item*
 _slab_get_item(uint8_t cid)
 {
-    struct slabclass *c;
-    struct slabinfo *sinfo;
-    struct slab *slab;
-    struct item *it;
+    struct slabclass* c; //这个slab在的辣个class
+    struct slabinfo* sinfo;
+    struct slab* slab;
+    struct item* it;
 
     ASSERT(cid >= SLABCLASS_MIN_ID && cid < nctable);
-    c = &ctable[cid];
+    c = &ctable[cid]; //ctable是一个全局表，通过cid来获得slab class
 
     /* allocate new item from partial slab */
     ASSERT(!TAILQ_EMPTY(&c->partial_msinfoq));
+    //partial_msinfoq是尾队列的head info，第一个partial slab被取出
     sinfo = TAILQ_FIRST(&c->partial_msinfoq);
     ASSERT(!slab_full(sinfo));
-    slab = slab_from_maddr(sinfo->addr, true);
 
-    /* consume an item from partial slab */
-    it = slab_to_item(slab, sinfo->nalloc, c->size, false);
-    it->offset = (uint32_t)((uint8_t *)it - (uint8_t *)slab);
+    slab = slab_from_maddr(sinfo->addr, true); //拿到slab！
+
+    /* consume an new item from partial slab's end area */
+    //TODO: use deleted area
+    if (sinfo->hole_head) {
+        uint16_t hole_index = sinfo->hole_head->hole_index;
+        hole_item* tmp = sinfo->hole_head;
+        sinfo->hole_head = sinfo->hole_head->next;
+        //use this empty space to create a item
+        it = (struct item*)((uint8_t*)slab->data + (hole_index * c->size));
+        it->offset = (uint32_t)((uint8_t*)it - (uint8_t*)slab);
+        free(tmp);
+    } else {
+        it = slab_to_item(slab, sinfo->nalloc, c->size, false);
+        it->offset = (uint32_t)((uint8_t*)it - (uint8_t*)slab);
+    }
+
     it->sid = slab->sid;
     sinfo->nalloc++;
 
+    //partial slab满了退役
     if (slab_full(sinfo)) {
         /* move memory slab from partial to full q */
         TAILQ_REMOVE(&c->partial_msinfoq, sinfo, tqe);
@@ -394,23 +429,25 @@ _slab_get_item(uint8_t cid)
         TAILQ_INSERT_TAIL(&full_msinfoq, sinfo, tqe);
     }
 
-    log_debug(LOG_VERB, "get it at offset %"PRIu32" with cid %"PRIu8"",
-              it->offset, it->cid);
+    log_debug(LOG_VERB, "get it at offset %" PRIu32 " with cid %" PRIu8 "",
+        it->offset, it->cid);
 
     return it;
 }
 
-struct item *
+//从slab class里先找一个合适的slab，再通过slab拿一个位置来放item
+struct item*
 slab_get_item(uint8_t cid)
 {
     rstatus_t status;
-    struct slabclass *c;
-    struct slabinfo *sinfo;
-    struct slab *slab;
+    struct slabclass* c;
+    struct slabinfo* sinfo;
+    struct slab* slab;
 
     ASSERT(cid >= SLABCLASS_MIN_ID && cid < nctable);
     c = &ctable[cid];
 
+    //索引满啦
     if (itemx_empty()) {
         status = slab_evict();
         if (status != FC_OK) {
@@ -423,8 +460,10 @@ slab_get_item(uint8_t cid)
     }
 
     if (!TAILQ_EMPTY(&free_msinfoq)) {
+        //partial的没了，只能用free的
         /* move memory slab from free to partial q */
         sinfo = TAILQ_FIRST(&free_msinfoq);
+
         ASSERT(nfree_msinfoq > 0);
         nfree_msinfoq--;
         c->nmslab++;
@@ -462,24 +501,32 @@ slab_get_item(uint8_t cid)
     return slab_get_item(cid);
 }
 
-void
-slab_put_item(struct item *it)
+void slab_put_item(struct item* it)
 {
-    log_debug(LOG_INFO, "put it '%.*s' at offset %"PRIu32" with cid %"PRIu8,
-              it->nkey, item_key(it), it->offset, it->cid);
+    log_debug(LOG_INFO, "put it '%.*s' at offset %" PRIu32 " with cid %" PRIu8,
+        it->nkey, item_key(it), it->offset, it->cid);
 }
 
-struct item *
+// /**
+//  * this method is for itemx to get its itme's siz·e
+//  */
+// size_t sid_to_size(uint32_t sid){
+//     struct slabclass *c;    /* slab class */
+//     c = &ctable[&stable[sid]->cid];
+//     return c->size;
+// }
+
+struct item*
 slab_read_item(uint32_t sid, uint32_t addr)
 {
-    struct slabclass *c;    /* slab class */
-    struct item *it;        /* item */
-    struct slabinfo *sinfo; /* slab info */
-    int n;                  /* bytes read */
-    off_t off;              /* offset to read from */
-    size_t size;            /* size to read */
-    off_t aligned_off;      /* aligned offset to read from */
-    size_t aligned_size;    /* aligned size to read */
+    struct slabclass* c; /* slab class */
+    struct item* it; /* item */
+    struct slabinfo* sinfo; /* slab info */
+    int n; /* bytes read */
+    off_t off; /* offset to read from */
+    size_t size; /* size to read */
+    off_t aligned_off; /* aligned offset to read from */
+    size_t aligned_size; /* aligned size to read */
 
     ASSERT(sid < nstable);
     ASSERT(addr < settings.slab_size);
@@ -492,7 +539,7 @@ slab_read_item(uint32_t sid, uint32_t addr)
     if (sinfo->mem) {
         off = (off_t)sinfo->addr * settings.slab_size + addr;
         fc_memcpy(readbuf, mstart + off, c->size);
-        it = (struct item *)readbuf;
+        it = (struct item*)readbuf;
         goto done;
     }
 
@@ -502,11 +549,11 @@ slab_read_item(uint32_t sid, uint32_t addr)
 
     n = pread(fd, readbuf, aligned_size, aligned_off);
     if (n < aligned_size) {
-        log_error("pread fd %d %zu bytes at offset %"PRIu64" failed: %s", fd,
-                  aligned_size, (uint64_t)aligned_off, strerror(errno));
+        log_error("pread fd %d %zu bytes at offset %" PRIu64 " failed: %s", fd,
+            aligned_size, (uint64_t)aligned_off, strerror(errno));
         return NULL;
     }
-    it = (struct item *)(readbuf + (off - aligned_off));
+    it = (struct item*)(readbuf + (off - aligned_off));
 
 done:
     ASSERT(it->magic == ITEM_MAGIC);
@@ -519,9 +566,9 @@ done:
 static rstatus_t
 slab_init_ctable(void)
 {
-    struct slabclass *c;
+    struct slabclass* c;
     uint8_t cid;
-    size_t *profile;
+    size_t* profile;
 
     ASSERT(settings.profile_last_id <= SLABCLASS_MAX_ID);
 
@@ -555,7 +602,7 @@ slab_deinit_ctable(void)
 static rstatus_t
 slab_init_stable(void)
 {
-    struct slabinfo *sinfo;
+    struct slabinfo* sinfo;
     uint32_t i, j;
 
     nstable = nmslab + ndslab;
@@ -574,6 +621,8 @@ slab_init_stable(void)
         sinfo->nfree = 0;
         sinfo->cid = SLABCLASS_INVALID_ID;
         sinfo->mem = 1;
+        //init hole system
+        sinfo->hole_head = NULL;
 
         nfree_msinfoq++;
         TAILQ_INSERT_TAIL(&free_msinfoq, sinfo, tqe);
@@ -589,6 +638,7 @@ slab_init_stable(void)
         sinfo->nfree = 0;
         sinfo->cid = SLABCLASS_INVALID_ID;
         sinfo->mem = 0;
+        sinfo->hole_head = NULL;
 
         nfree_dsinfoq++;
         TAILQ_INSERT_TAIL(&free_dsinfoq, sinfo, tqe);
@@ -690,7 +740,7 @@ slab_init(void)
     evictbuf = fc_mmap(settings.slab_size);
     if (evictbuf == NULL) {
         log_error("mmap %zu bytes failed: %s", settings.slab_size,
-                  strerror(errno));
+            strerror(errno));
         return FC_ENOMEM;
     }
     memset(evictbuf, 0xff, settings.slab_size);
@@ -698,7 +748,7 @@ slab_init(void)
     readbuf = fc_mmap(settings.slab_size);
     if (readbuf == NULL) {
         log_error("mmap %zu bytes failed: %s", settings.slab_size,
-                  strerror(errno));
+            strerror(errno));
         return FC_ENOMEM;
     }
     memset(readbuf, 0xff, settings.slab_size);
@@ -706,8 +756,7 @@ slab_init(void)
     return FC_OK;
 }
 
-void
-slab_deinit(void)
+void slab_deinit(void)
 {
     slab_deinit_ctable();
     slab_deinit_stable();
@@ -774,7 +823,7 @@ slab_get_cid(uint32_t sid)
     return stable[sid].cid;
 }
 
-struct slabclass *
+struct slabclass*
 slab_get_class_by_cid(uint8_t cid)
 {
     if (cid > nctable) {
@@ -783,11 +832,10 @@ slab_get_class_by_cid(uint8_t cid)
     return &ctable[cid];
 }
 
-bool
-slab_incr_chunks_by_sid(uint32_t sid, int n)
+bool slab_incr_chunks_by_sid(uint32_t sid, int n)
 {
-    struct slabinfo*sinfo;
-    struct slabclass *c;
+    struct slabinfo* sinfo;
+    struct slabclass* c;
 
     sinfo = &stable[sid];
     if (sinfo == NULL) {

@@ -1,5 +1,22 @@
 # fatcache [![Build Status](https://travis-ci.org/twitter/fatcache.png?branch=master)](https://travis-ci.org/twitter/fatcache)
 
+**fatcache** is memcache on SSD. Use cheaper flash SSD to increase cache **size** and finally increase **hit rates**.
+
+## To-Do List
+
+- [ ] Async disk I/O. [polyu-szy/Fatcache-Async-2017](https://github.com/polyu-szy/Fatcache-Async-2017) may have some insights. 
+- [x] Implemented by githulk in this [pr](https://github.com/twitter/fatcache/commit/f7d45af57b0aac79d176bc97c3df73968e7faaa1). ~~stats command~~
+- [x] Reuse deleted item space to save memory&SSD space, especially for write intensive workloads.
+- [ ] Use hot ring itemx to reduce hot data indexing cost, *but this isn't the bottleneck*.
+- [ ] A better slab granularity to reduce SSD traffic.
+- [x] Automationshell scripts to build, run and test.
+
+thanks to [git-hulk/fatcache-note](https://github.com/git-hulk/fatcache-note)
+
+---
+
+***the old readme.md shows below:***
+
 **fatcache** is memcache on SSD. Think of fatcache as a cache for your big data.
 
 ## Overview
@@ -115,10 +132,8 @@ To build fatcache from source with _debug logs enabled_ and _assertions disabled
 
 ## Future Work
 
-- [x] async NET I/O, view this repo [polyu-szy/Fatcache-Async-2017](https://github.com/polyu-szy/Fatcache-Async-2017). ~~fatcache deals with two kinds of IOs - disk IO and network IO. Network IO in fatcache is async, but disk IO is sync. It is recommended to run multiple instances of fatcache on a single machine to exploit CPU and SSD parallelism. However, by making disk IO async (using libaio, perhaps), it would be possible for a single instance to completely exploit all available SSD device parallelism.~~
-- [x] Implements by githulk in this [pr](https://github.com/twitter/fatcache/commit/f7d45af57b0aac79d176bc97c3df73968e7faaa1). ~~observability in fatcache through stats~~
-- [ ] Use hot ring itemx to reduce hot data indexing cose.
-- [ ] Slab granularity
+- fatcache deals with two kinds of IOs - disk IO and network IO. Network IO in fatcache is async, but disk IO is sync. It is recommended to run multiple instances of fatcache on a single machine to exploit CPU and SSD parallelism. However, by making disk IO async (using libaio, perhaps), it would be possible for a single instance to completely exploit all available SSD device parallelism.
+- observability in fatcache through stats
 
 ## Issues and Support
 

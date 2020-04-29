@@ -16,7 +16,7 @@
  */
 
 #include <fc_core.h>
-
+#include <stdlib.h>
 #define HASHSIZE(_n)    (1ULL << (_n))
 #define HASHMASK(_n)    (HASHSIZE(_n) - 1)
 
@@ -70,6 +70,7 @@ itemx_empty(void)
     return false;
 }
 
+//消耗一个itemx索引
 static struct itemx *
 itemx_get(void)
 {
@@ -198,6 +199,7 @@ itemx_getx(uint32_t hash, uint8_t *md)
     return itx;
 }
 
+//创建一个索引，把传入的数据都装上
 void
 itemx_putx(uint32_t hash, uint8_t *md, uint32_t sid, uint32_t offset,
            rel_time_t expiry, uint64_t cas)
@@ -225,18 +227,44 @@ itemx_putx(uint32_t hash, uint8_t *md, uint32_t sid, uint32_t offset,
 bool
 itemx_removex(uint32_t hash, uint8_t *md)
 {
-    struct itemx_tqh *bucket;
+    struct itemx_tqh *bucket;//这个bucket里面所有itemx的头指针
     struct itemx *itx;
 
-    itx = itemx_getx(hash, md);
+    itx = itemx_getx(hash, md);//根据hash值和sha1值来获得对应的itemx
     if (itx == NULL) {
         return false;
     }
 
     bucket = itemx_bucket(hash);
     nitx--;
+
+    //删除之后去slabinfo做一个标记
+    struct slabclass *c;    /* slab class */
+    struct slabinfo *sinfo;
+    sinfo = sid_to_sinfo(itx->sid);
+
+    if (sinfo->mem) {
+        //删除的item在slab中是第几个
+        uint16_t index_it = itx->offset / cid_to_size(sinfo->cid);
+
+        log_debug(LOG_VERB, "delete itemx in sid: %" PRIu32 ", index_it: %" PRIu16 "",
+        itx->sid, index_it);
+
+        hole_item* hitem = (hole_item*) malloc(sizeof(hole_item));
+        hitem->hole_index = index_it;
+        hitem->next = NULL;
+        //simple insert to hole queue
+        if (sinfo->hole_head) {  
+            hitem->next = sinfo->hole_head;
+            sinfo->hole_head = hitem;
+        }else{
+            sinfo->hole_head = hitem;
+        }
+    }
+    
+    
     STAILQ_REMOVE(bucket, itx, itemx, tqe);
-    slab_incr_chunks_by_sid(itx->sid, -1);
+    slab_incr_chunks_by_sid(itx->sid, -1);//stat
 
     itemx_put(itx);
 
