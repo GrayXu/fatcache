@@ -209,6 +209,8 @@ req_process_get(struct context *ctx, struct conn *conn, struct msg *msg)
         return;
     }
 
+    log_debug(LOG_VERB, "get it at offset %"PRIu32"", it->offset);
+
     STATS_HIT_INCR(msg->type);
     SC_STATS_INCR(it->cid, msg->type);
     rsp_send_value(ctx, conn, msg, it, itx->cas);
@@ -248,7 +250,7 @@ req_process_set(struct context *ctx, struct conn *conn, struct msg *msg)
         return;
     }
 
-    itemx_removex(msg->hash, msg->md);
+    itemx_removex(msg->hash, msg->md);//直接清除了原来的索引，之后会创建一个索引，看上去是直接做异地更新
 
     it = item_get(key, nkey, cid, msg->vlen, time_reltime(msg->expiry),
                   msg->flags, msg->md, msg->hash);

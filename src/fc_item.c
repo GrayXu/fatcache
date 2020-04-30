@@ -60,6 +60,7 @@ item_slabcid(uint8_t nkey, uint32_t ndata)
     return cid;
 }
 
+//插入一个item！
 struct item *
 item_get(uint8_t *key, uint8_t nkey, uint8_t cid, uint32_t ndata,
          rel_time_t expiry, uint32_t flags, uint8_t *md, uint32_t hash)
@@ -68,7 +69,8 @@ item_get(uint8_t *key, uint8_t nkey, uint8_t cid, uint32_t ndata,
 
     ASSERT(slab_valid_id(cid));
 
-    it = slab_get_item(cid);
+    it = slab_get_item(cid);//根据定位到的slab class，来获得某一个slab上一个空闲的item位置
+
     if (it == NULL) {
         log_warn("server error on allocating item in slab %"PRIu8, cid);
         return NULL;
@@ -85,7 +87,7 @@ item_get(uint8_t *key, uint8_t nkey, uint8_t cid, uint32_t ndata,
     /* part of end[] that stores the key string is initialized here */
     fc_memcpy(item_key(it), key, nkey);
 
-    log_debug(LOG_VERB, "get it '%.*s' at offset %"PRIu32" with cid %"PRIu8
+    log_debug(LOG_VERB, "(insert item) get it '%.*s' at offset %"PRIu32" with cid %"PRIu8
               " expiry %u", it->nkey, item_key(it), it->offset, it->cid,
               expiry);
 

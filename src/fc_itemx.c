@@ -190,12 +190,13 @@ itemx_getx(uint32_t hash, uint8_t *md)
 
     bucket = itemx_bucket(hash);
 
+    //遍历冲突链来寻找
     STAILQ_FOREACH(itx, bucket, tqe) {
         if (memcmp(itx->md, md, sizeof(itx->md)) == 0) {
             break;
         }
     }
-
+    
     return itx;
 }
 
@@ -232,7 +233,7 @@ itemx_removex(uint32_t hash, uint8_t *md)
 
     itx = itemx_getx(hash, md);//根据hash值和sha1值来获得对应的itemx
     if (itx == NULL) {
-        return false;
+        return false;//set数据的指令会从这里返回
     }
 
     bucket = itemx_bucket(hash);
@@ -243,10 +244,11 @@ itemx_removex(uint32_t hash, uint8_t *md)
     struct slabinfo *sinfo;
     sinfo = sid_to_sinfo(itx->sid);
 
+    //删除索引后维护一下hole queue
     if (sinfo->mem) {
         //删除的item在slab中是第几个
         uint16_t index_it = itx->offset / cid_to_size(sinfo->cid);
-
+        
         log_debug(LOG_VERB, "delete itemx in sid: %" PRIu32 ", index_it: %" PRIu16 "",
         itx->sid, index_it);
 
@@ -260,6 +262,8 @@ itemx_removex(uint32_t hash, uint8_t *md)
         }else{
             sinfo->hole_head = hitem;
         }
+        //原始的更新是异地更新，所以不做nalloc的自减
+        sinfo->nalloc--;
     }
     
     

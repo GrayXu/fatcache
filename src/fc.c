@@ -705,7 +705,7 @@ main(int argc, char **argv)
     }
 
     if (show_version) {
-        log_stderr("This is %s-%s" CRLF, PACKAGE, FC_VERSION_STRING);
+        log_stderr("This is %s-%s by GrayXu" CRLF, PACKAGE, FC_VERSION_STRING);
 
         if (show_help) {
             fc_show_usage();

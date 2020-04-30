@@ -10,7 +10,8 @@
 - [ ] Use hot ring itemx to reduce hot data indexing cost, *but this isn't the bottleneck*.
 - [ ] A better slab granularity to reduce SSD traffic.
 - [x] Automationshell scripts to build, run and test.
-
+- [x] In-mem data in-place update  
+  
 thanks to [git-hulk/fatcache-note](https://github.com/git-hulk/fatcache-note)
 
 ---

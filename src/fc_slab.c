@@ -404,7 +404,7 @@ _slab_get_item(uint8_t cid)
     slab = slab_from_maddr(sinfo->addr, true); //拿到slab！
 
     /* consume an new item from partial slab's end area */
-    //TODO: use deleted area
+    //use deleted area
     if (sinfo->hole_head) {
         uint16_t hole_index = sinfo->hole_head->hole_index;
         hole_item* tmp = sinfo->hole_head;
@@ -412,6 +412,7 @@ _slab_get_item(uint8_t cid)
         //use this empty space to create a item
         it = (struct item*)((uint8_t*)slab->data + (hole_index * c->size));
         it->offset = (uint32_t)((uint8_t*)it - (uint8_t*)slab);
+        log_debug(LOG_VERB, "use deleted area");
         free(tmp);
     } else {
         it = slab_to_item(slab, sinfo->nalloc, c->size, false);
@@ -419,6 +420,7 @@ _slab_get_item(uint8_t cid)
     }
 
     it->sid = slab->sid;
+
     sinfo->nalloc++;
 
     //partial slab满了退役
