@@ -27,8 +27,6 @@ struct itemx {
     uint32_t            offset; /* value在slab里面的偏移位置 item offset from owner slab base  */
     rel_time_t          expiry; /* expiry in secs */
     uint64_t            cas;    /* cas */
-    struct itemx*		prev; //pre pointer
-    struct itemx*		next; //next pointer
 } __attribute__ ((__packed__));
 
 STAILQ_HEAD(itemx_tqh, itemx);
