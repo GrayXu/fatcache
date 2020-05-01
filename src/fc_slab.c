@@ -16,6 +16,8 @@
  */
 
 #include <fc_core.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 extern struct settings settings;
 
@@ -29,8 +31,8 @@ static uint32_t nfree_dsinfoq; /* # free disk slabinfo q */
 static struct slabhinfo free_dsinfoq; /* free disk slabinfo q */
 static uint32_t nfull_dsinfoq; /* # full disk slabinfo q */
 static struct slabhinfo full_dsinfoq; /* full disk slabinfo q */
-static lru_head * lruh;
-static lru_head * lruh_disk;
+lru_head* lruh;
+lru_head* lruh_disk;
 
 static uint8_t nctable; /* # class table entry */
 static struct slabclass* ctable; /* table of slabclass indexed by cid */
@@ -57,16 +59,17 @@ static uint8_t* readbuf; /* read buffer */
 
 /* for itemx to call, itemx can't access stable */
 struct slabinfo*
-sid_to_sinfo(uint32_t sid){
+sid_to_sinfo(uint32_t sid)
+{
     return &stable[sid];
 }
 
 /* for itemx to call, itemx can't access ctable */
 size_t
-cid_to_size(uint8_t cid){
+cid_to_size(uint8_t cid)
+{
     return (&ctable[cid])->size;
 }
-
 
 /*
  * Return the maximum space available for item sized chunks in a given
@@ -75,7 +78,7 @@ cid_to_size(uint8_t cid){
 size_t
 slab_data_size(void)
 {
-    return settings.slab_size - SLAB_HDR_SIZE;//default 1M - ?
+    return settings.slab_size - SLAB_HDR_SIZE; //default 1M - ?
 }
 
 /*
@@ -233,7 +236,8 @@ slab_to_item(struct slab* slab, uint32_t idx, size_t size, bool verify)
 //索引消耗完 or 全部disk slab被占满，需要做数据剔除
 static rstatus_t
 slab_evict(void)
-{
+{   
+    log_debug(LOG_DEBUG, "evict slab");
     struct slabclass* c; /* slab class */
     struct slabinfo* sinfo; /* disk slabinfo */
     struct slab* slab; /* read slab */
@@ -246,14 +250,20 @@ slab_evict(void)
     ASSERT(nfull_dsinfoq > 0);
 
     // sinfo = TAILQ_FIRST(&full_dsinfoq); //old version
-    sinfo = lruh_disk->tail;
+    if (lruh_disk->head) {
+        sinfo = lruh_disk->head;
+        lru_remove_head(lruh_disk);
+    }else{
+        sinfo = TAILQ_FIRST(&full_dsinfoq);
+    }
+    
     nfull_dsinfoq--;
     TAILQ_REMOVE(&full_dsinfoq, sinfo, tqe);
     ASSERT(!sinfo->mem);
     ASSERT(sinfo->addr < ndslab);
 
     /* read the slab */
-    slab = (struct slab*)evictbuf;//already inited
+    slab = (struct slab*)evictbuf; //already inited
     size = settings.slab_size;
     off = slab_to_daddr(sinfo);
     n = pread(fd, slab, size, off);
@@ -309,7 +319,7 @@ slab_swap_addr(struct slabinfo* msinfo, struct slabinfo* dsinfo)
 //flush to disk
 static rstatus_t
 _slab_drain(void)
-{
+{   
     struct slabinfo *msinfo, *dsinfo; /* memory and disk slabinfo */
     struct slab* slab; /* slab to write */
     size_t size; /* bytes to write */
@@ -328,7 +338,14 @@ _slab_drain(void)
     //因为fatcache的设计保证常写的数据自然在内存上，所以这里应该去做优化读取
     //slab粒度比较大，直接做简单严格LRU
     // msinfo = TAILQ_FIRST(&full_msinfoq); // old version FIFO
-    msinfo = lruh->tail;
+    if (lruh->head) {
+        msinfo = lruh->head;
+        lru_remove_head(lruh);
+    }else{
+        msinfo = TAILQ_FIRST(&full_msinfoq);
+    }
+    
+    
     nfull_msinfoq--;
     TAILQ_REMOVE(&full_msinfoq, msinfo, tqe);
 
@@ -384,7 +401,7 @@ slab_drain(void)
         return _slab_drain();
     }
 
-    //disk里没有free的，做剔除
+    //disk里没有free的，做剔除，再刷入
     status = slab_evict();
     if (status != FC_OK) {
         return status;
@@ -508,7 +525,7 @@ slab_get_item(uint8_t cid)
     ASSERT(!TAILQ_EMPTY(&full_msinfoq));
     ASSERT(nfull_msinfoq > 0);
 
-    //slab枯竭
+    //内存上的slab满啦
     status = slab_drain();
     if (status != FC_OK) {
         return NULL;
@@ -522,15 +539,6 @@ void slab_put_item(struct item* it)
     log_debug(LOG_INFO, "put it '%.*s' at offset %" PRIu32 " with cid %" PRIu8,
         it->nkey, item_key(it), it->offset, it->cid);
 }
-
-// /**
-//  * this method is for itemx to get its itme's siz·e
-//  */
-// size_t sid_to_size(uint32_t sid){
-//     struct slabclass *c;    /* slab class */
-//     c = &ctable[&stable[sid]->cid];
-//     return c->size;
-// }
 
 struct item*
 slab_read_item(uint32_t sid, uint32_t addr)
@@ -569,20 +577,22 @@ slab_read_item(uint32_t sid, uint32_t addr)
     }
     it = (struct item*)(readbuf + (off - aligned_off));
 
+    //successfully read item, mark this slab in LRU list O(1)
+    //make sure this sinfo is a full slab
+    if (slab_full(sinfo)) {
+        if (sinfo->mem) {
+            lru_set(lruh, sinfo);
+        } else {
+            lru_set(lruh_disk, sinfo);
+        }
+    }
+
 done:
     ASSERT(it->magic == ITEM_MAGIC);
     ASSERT(it->cid == sinfo->cid);
     ASSERT(it->sid == sinfo->sid);
 
-    //successfully read item, mark this slab in LRU list O(1)
-    //make sure this sinfo is a full slab
-    if(slab_full(sinfo)){
-        if (sinfo->mem){
-            SINFO_LRU_SET(lruh, sinfo);
-        }else{
-            SINFO_LRU_SET(lruh_disk, sinfo);
-        }
-    }
+    
 
     return it;
 }
@@ -667,7 +677,8 @@ slab_init_stable(void)
         nfree_dsinfoq++;
         TAILQ_INSERT_TAIL(&free_dsinfoq, sinfo, tqe);
     }
-    sinfo->read = 0;
+    sinfo->next = NULL;
+    sinfo->pre = NULL;
     return FC_OK;
 }
 
@@ -778,8 +789,8 @@ slab_init(void)
     memset(readbuf, 0xff, settings.slab_size);
 
     //init lru controller
-    lruh = (lru_head *)malloc(sizeof(lru_head));
-    lruh_disk = (lru_head *)malloc(sizeof(lru_head));
+    lruh = (lru_head*)malloc(sizeof(lru_head));
+    lruh_disk = (lru_head*)malloc(sizeof(lru_head));
     lruh->head = NULL;
     lruh->tail = NULL;
     lruh_disk->head = NULL;
@@ -882,4 +893,64 @@ bool slab_incr_chunks_by_sid(uint32_t sid, int n)
     c = &ctable[sinfo->cid];
     c->nused_item += n;
     return true;
+}
+
+void lru_set(lru_head* lru, struct slabinfo* item)
+{   
+    log_debug(LOG_ALERT, "lru set sid:%d, after set:", item->sid);
+    if (lru->head == NULL && lru->tail == NULL) { //fully empty lru list case
+        lru->head = item;
+        lru->tail = item;
+        item->pre = NULL;
+        item->next = NULL;
+    } else {
+        struct slabinfo* old_pre = item->pre;
+        struct slabinfo* old_next = item->next;
+        struct slabinfo* old_tail = lru->tail;
+
+        if (old_pre && !old_next) { //the last one, don't have to change
+            return;
+        }
+
+        item->pre = old_tail;
+        item->next = NULL;
+        lru->tail = item;
+        old_tail->next = item;
+
+        if (!old_pre && old_next) { //means the first one
+            lru->head = old_next;
+            old_next->pre = NULL;
+        } else if (old_pre && old_next) { //between two items
+            old_pre->next = old_next;
+            old_next->pre = old_pre;
+        }
+    }
+
+    // output!!!
+    struct slabinfo* tmp = lru->head;
+    while (tmp){
+        log_debug(LOG_DEBUG, "lru:%d,", tmp->sid);
+        tmp = tmp->next;
+    }
+}
+
+void lru_remove_head(lru_head* lruh)
+{   
+    ASSERT(lruh->head);
+    log_debug(LOG_DEBUG, "lru remove sid:%d, after remove:", lruh->head->sid);
+    struct slabinfo* new_head = lruh->head->next;
+    if (new_head) {
+        lruh->head->next = NULL;
+        lruh->head = new_head;
+        new_head->pre = NULL;
+    } else {
+        lruh->head = NULL;
+        lruh->tail = NULL;
+    }
+    struct slabinfo* tmp = lruh->head;
+    while (tmp){
+        log_debug(LOG_DEBUG, "lru:%d,", tmp->sid);
+        tmp = tmp->next;
+    }
+
 }

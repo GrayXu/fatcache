@@ -25,13 +25,13 @@ static void set_options(){
 
 #define FC_DAEMONIZE        true
 
-    //#define FC_LOG_FILE         NULL
-#define FC_LOG_FILE         "/home/yu/test/log2"
+//#define FC_LOG_FILE         NULL
+#define FC_LOG_FILE         "/root/log_stg"
 #define FC_LOG_DEFAULT      LOG_INFO
 #define FC_LOG_MIN          LOG_EMERG
 #define FC_LOG_MAX          LOG_PVERB
 
-#define FC_PORT             11211
+#define FC_PORT             11212
 #define FC_ADDR             "0.0.0.0"
 
 #define FC_HASH_POWER       ITEMX_HASH_POWER

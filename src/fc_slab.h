@@ -38,21 +38,29 @@ typedef struct Hole_item{
     struct Hole_item * next;
 } hole_item;
 
+typedef struct Lru_head{
+    struct slabinfo * head;
+    struct slabinfo * tail;
+}lru_head;
+
 struct slabinfo {
     uint32_t              sid;    /* slab id (const) */
     uint32_t              addr;   /* address as slab_size offset from memory / disk base */
     TAILQ_ENTRY(slabinfo) tqe;    /* link in free q / partial q / full q */
     uint32_t              nalloc; /* # item allocated (monotonic) */
-    uint32_t              nfree;  /* # item freed (monotonic) */
+    // uint32_t              nfree;  /* # item freed (monotonic) */ //you can get it from c->nitem == sinfo->nalloc.
     uint8_t               cid;    /* class id */
     unsigned              mem:1;  /* memory? */
     hole_item*            hole_head;/* hole item queue head node */
+    /* below is for simple double-linked LRU */
+    struct slabinfo * pre;
+    struct slabinfo * next;
 };
 
 TAILQ_HEAD(slabhinfo, slabinfo);
 
 struct slabclass {
-    uint32_t         nitem;           /* # item per slab (const) 这个class里一个slab放几个item*/
+    uint32_t         nitem;           /* # item per slab (const) 这个class里一个slab能放几个item*/
     size_t           size;            /* item size (const) */
     size_t           slack;           /* unusable slack space (const) */
     struct slabhinfo partial_msinfoq; /* partial slabinfo q */
@@ -69,6 +77,7 @@ struct slabclass {
 
 struct slabinfo* sid_to_sinfo(uint32_t sid);
 size_t cid_to_size(uint8_t cid);
+uint64_t slab_nflush(void);
 
 bool slab_valid_id(uint8_t cid);
 size_t slab_data_size(void);
@@ -89,9 +98,16 @@ uint32_t slab_msinfo_npartial(void);
 uint32_t slab_dsinfo_nalloc(void);
 uint32_t slab_dsinfo_nfree(void);
 uint32_t slab_dsinfo_nfull(void);
+
+void lru_set(lru_head* lru, struct slabinfo* item);
+void lru_remove_head(lru_head* lruh);
+
+
 uint64_t slab_nevict(void);
+
 uint8_t slab_max_cid(void);
 uint8_t slab_get_cid(uint32_t sd);
 struct slabclass *slab_get_class_by_cid(uint8_t cid);
 bool slab_incr_chunks_by_sid(uint32_t sid, int n);
+
 #endif

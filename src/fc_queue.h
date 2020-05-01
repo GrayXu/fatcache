@@ -786,22 +786,3 @@ struct {                                                                \
 } while (0)
 
 #endif
-
-//when seting, use a simple LRU method
-#define ITEMX_LRU_SET(lru_list, itemx) do {                             \
-    if(queList -> head == NULL && queList -> tail == NULL)              \
-    {                                                                   \
-        queList -> head = item;                                         \
-        queList -> tail = item;                                         \
-        item -> prev = NULL;                                            \
-        item -> next = NULL;                                            \
-    }                                                                   \
-    else                                                                \
-    {                                                                   \
-        item -> prev = queList -> tail;                                 \
-        item -> next = queList -> tail -> next;                         \
-        queList -> tail -> next = item;                                 \
-        queList -> tail = item;                                         \
-    }                                                                   \
-    ++(queList -> size);                                                \
-} while (0);

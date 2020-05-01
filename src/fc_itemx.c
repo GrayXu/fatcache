@@ -149,28 +149,28 @@ itemx_init(void)
     return FC_OK;
 }
 
-void
-itemx_deinit(void)
-{
-    struct itemx *itx;
+// void
+// itemx_deinit(void)
+// {
+//     struct itemx *itx;
 
-    while (!STAILQ_EMPTY(&free_itemxq)) {
-        ASSERT(nfree_itemxq > 0);
+//     while (!STAILQ_EMPTY(&free_itemxq)) {
+//         ASSERT(nfree_itemxq > 0);
 
-        itx = STAILQ_FIRST(&free_itemxq);
-        nfree_itemxq--;
-        STAILQ_REMOVE_HEAD(&free_itemxq, tqe);
-    }
-    ASSERT(nfree_itemxq == 0);
+//         itx = STAILQ_FIRST(&free_itemxq);
+//         nfree_itemxq--;
+//         STAILQ_REMOVE_HEAD(&free_itemxq, tqe);
+//     }
+//     ASSERT(nfree_itemxq == 0);
 
-    if (istart != NULL) {
-        fc_munmap(istart, settings.max_index_memory);
-    }
+//     if (istart != NULL) {
+//         fc_munmap(istart, settings.max_index_memory);
+//     }
 
-    if (itx_table != NULL) {
-        fc_free(itx_table);
-    }
-}
+//     if (itx_table != NULL) {
+//         fc_free(itx_table);
+//     }
+// }
 
 static struct itemx_tqh *
 itemx_bucket(uint32_t hash)
@@ -242,7 +242,7 @@ itemx_removex(uint32_t hash, uint8_t *md)
     nitx--;
 
     //删除之后去slabinfo做一个标记
-    struct slabclass *c;    /* slab class */
+    // struct slabclass *c;    /* slab class */ //unused warnning
     struct slabinfo *sinfo;
     sinfo = sid_to_sinfo(itx->sid);
 
