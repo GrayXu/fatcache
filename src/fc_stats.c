@@ -211,6 +211,7 @@ stats_server(void)
     APPEND_STAT(stats_buf, "free_disk_slab", "%u", slab_dsinfo_nfree());
     APPEND_STAT(stats_buf, "full_disk_slab", "%u", slab_dsinfo_nfull());
     APPEND_STAT(stats_buf, "evict_time", "%llu", slab_nevict());
+    APPEND_STAT(stats_buf, "evict_time", "%llu", slab_nflush());
     APPEND_STAT_END(stats_buf);
 
     return stats_buf;

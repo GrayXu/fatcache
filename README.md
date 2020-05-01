@@ -4,14 +4,14 @@
 
 ## To-Do List
 
-- [ ] Async disk I/O. [polyu-szy/Fatcache-Async-2017](https://github.com/polyu-szy/Fatcache-Async-2017) may have some insights. 
+- [ ] Async disk I/O. [polyu-szy/Fatcache-Async-2017](https://github.com/polyu-szy/Fatcache-Async-2017) may have some insights. **For now, multi-instances and consistent hash would be a great temp solution.**
 - [x] Implemented by githulk in this [pr](https://github.com/twitter/fatcache/commit/f7d45af57b0aac79d176bc97c3df73968e7faaa1). ~~stats command~~
-- [x] Reuse deleted item space to save memory&SSD space, especially for write intensive workloads.
-- [ ] Use hot ring itemx to reduce hot data indexing cost, *but this isn't the bottleneck*.
-- [ ] A better slab granularity to reduce SSD traffic.
-- [x] Automationshell scripts to build, run and test.
+- [x] Reuse deleted item space to save memory & SSD space, especially for write intensive workloads.  
+- [ ] Automationshell scripts to build, run and test. *And even tune hyper-parameters?*
 - [x] In-mem data in-place update  
-  
+- [x] double-linked list LRU for slab evict and flush
+- [ ] make the hot-cold distribution in slabs not uniform
+
 thanks to [git-hulk/fatcache-note](https://github.com/git-hulk/fatcache-note)
 
 ---

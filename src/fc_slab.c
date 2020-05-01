@@ -29,6 +29,8 @@ static uint32_t nfree_dsinfoq; /* # free disk slabinfo q */
 static struct slabhinfo free_dsinfoq; /* free disk slabinfo q */
 static uint32_t nfull_dsinfoq; /* # full disk slabinfo q */
 static struct slabhinfo full_dsinfoq; /* full disk slabinfo q */
+static lru_head * lruh;
+static lru_head * lruh_disk;
 
 static uint8_t nctable; /* # class table entry */
 static struct slabclass* ctable; /* table of slabclass indexed by cid */
@@ -49,6 +51,7 @@ static uint32_t nmslab; /* # memory slabs */
 static uint32_t ndslab; /* # disk slabs */
 
 static uint64_t nevict;
+static uint64_t nflush;
 static uint8_t* evictbuf; /* evict buffer */
 static uint8_t* readbuf; /* read buffer */
 
@@ -72,7 +75,7 @@ cid_to_size(uint8_t cid){
 size_t
 slab_data_size(void)
 {
-    return settings.slab_size - SLAB_HDR_SIZE;
+    return settings.slab_size - SLAB_HDR_SIZE;//default 1M - ?
 }
 
 /*
@@ -227,7 +230,7 @@ slab_to_item(struct slab* slab, uint32_t idx, size_t size, bool verify)
     return it;
 }
 
-//索引消耗完，需要做删除
+//索引消耗完 or 全部disk slab被占满，需要做数据剔除
 static rstatus_t
 slab_evict(void)
 {
@@ -242,14 +245,15 @@ slab_evict(void)
     ASSERT(!TAILQ_EMPTY(&full_dsinfoq));
     ASSERT(nfull_dsinfoq > 0);
 
-    sinfo = TAILQ_FIRST(&full_dsinfoq);
+    // sinfo = TAILQ_FIRST(&full_dsinfoq); //old version
+    sinfo = lruh_disk->tail;
     nfull_dsinfoq--;
     TAILQ_REMOVE(&full_dsinfoq, sinfo, tqe);
     ASSERT(!sinfo->mem);
     ASSERT(sinfo->addr < ndslab);
 
     /* read the slab */
-    slab = (struct slab*)evictbuf;
+    slab = (struct slab*)evictbuf;//already inited
     size = settings.slab_size;
     off = slab_to_daddr(sinfo);
     n = pread(fd, slab, size, off);
@@ -302,6 +306,7 @@ slab_swap_addr(struct slabinfo* msinfo, struct slabinfo* dsinfo)
     dsinfo->mem = 1;
 }
 
+//flush to disk
 static rstatus_t
 _slab_drain(void)
 {
@@ -318,9 +323,15 @@ _slab_drain(void)
     ASSERT(nfree_dsinfoq > 0);
 
     /* get memory sinfo from full q */
-    msinfo = TAILQ_FIRST(&full_msinfoq);
+
+    //从full队列里取出第一个做flush, FIFO
+    //因为fatcache的设计保证常写的数据自然在内存上，所以这里应该去做优化读取
+    //slab粒度比较大，直接做简单严格LRU
+    // msinfo = TAILQ_FIRST(&full_msinfoq); // old version FIFO
+    msinfo = lruh->tail;
     nfull_msinfoq--;
     TAILQ_REMOVE(&full_msinfoq, msinfo, tqe);
+
     ASSERT(msinfo->mem);
     ASSERT(slab_full(msinfo));
 
@@ -358,7 +369,7 @@ _slab_drain(void)
     /* move msinfo (now a disk sinfo) to full q */
     nfull_dsinfoq++;
     TAILQ_INSERT_TAIL(&full_dsinfoq, msinfo, tqe);
-
+    nflush++;
     return FC_OK;
 }
 
@@ -367,11 +378,13 @@ slab_drain(void)
 {
     rstatus_t status;
 
+    //disk里还有free的
     if (!TAILQ_EMPTY(&free_dsinfoq)) {
         ASSERT(nfree_dsinfoq > 0);
         return _slab_drain();
     }
 
+    //disk里没有free的，做剔除
     status = slab_evict();
     if (status != FC_OK) {
         return status;
@@ -449,7 +462,7 @@ slab_get_item(uint8_t cid)
     ASSERT(cid >= SLABCLASS_MIN_ID && cid < nctable);
     c = &ctable[cid];
 
-    //索引满啦
+    //index memory space is full
     if (itemx_empty()) {
         status = slab_evict();
         if (status != FC_OK) {
@@ -476,7 +489,7 @@ slab_get_item(uint8_t cid)
         /* sid is already initialized by slab_init */
         /* addr is already initialized by slab_init */
         sinfo->nalloc = 0;
-        sinfo->nfree = 0;
+        // sinfo->nfree = 0;
         sinfo->cid = cid;
         /* mem is already initialized by slab_init */
         ASSERT(sinfo->mem == 1);
@@ -495,6 +508,7 @@ slab_get_item(uint8_t cid)
     ASSERT(!TAILQ_EMPTY(&full_msinfoq));
     ASSERT(nfull_msinfoq > 0);
 
+    //slab枯竭
     status = slab_drain();
     if (status != FC_OK) {
         return NULL;
@@ -526,7 +540,6 @@ slab_read_item(uint32_t sid, uint32_t addr)
     struct slabinfo* sinfo; /* slab info */
     int n; /* bytes read */
     off_t off; /* offset to read from */
-    size_t size; /* size to read */
     off_t aligned_off; /* aligned offset to read from */
     size_t aligned_size; /* aligned size to read */
 
@@ -535,7 +548,6 @@ slab_read_item(uint32_t sid, uint32_t addr)
 
     sinfo = &stable[sid];
     c = &ctable[sinfo->cid];
-    size = settings.slab_size;
     it = NULL;
 
     if (sinfo->mem) {
@@ -561,6 +573,16 @@ done:
     ASSERT(it->magic == ITEM_MAGIC);
     ASSERT(it->cid == sinfo->cid);
     ASSERT(it->sid == sinfo->sid);
+
+    //successfully read item, mark this slab in LRU list O(1)
+    //make sure this sinfo is a full slab
+    if(slab_full(sinfo)){
+        if (sinfo->mem){
+            SINFO_LRU_SET(lruh, sinfo);
+        }else{
+            SINFO_LRU_SET(lruh_disk, sinfo);
+        }
+    }
 
     return it;
 }
@@ -620,7 +642,7 @@ slab_init_stable(void)
         sinfo->sid = i;
         sinfo->addr = i;
         sinfo->nalloc = 0;
-        sinfo->nfree = 0;
+        // sinfo->nfree = 0;
         sinfo->cid = SLABCLASS_INVALID_ID;
         sinfo->mem = 1;
         //init hole system
@@ -637,7 +659,7 @@ slab_init_stable(void)
         sinfo->sid = i;
         sinfo->addr = j;
         sinfo->nalloc = 0;
-        sinfo->nfree = 0;
+        // sinfo->nfree = 0;
         sinfo->cid = SLABCLASS_INVALID_ID;
         sinfo->mem = 0;
         sinfo->hole_head = NULL;
@@ -645,7 +667,7 @@ slab_init_stable(void)
         nfree_dsinfoq++;
         TAILQ_INSERT_TAIL(&free_dsinfoq, sinfo, tqe);
     }
-
+    sinfo->read = 0;
     return FC_OK;
 }
 
@@ -755,6 +777,14 @@ slab_init(void)
     }
     memset(readbuf, 0xff, settings.slab_size);
 
+    //init lru controller
+    lruh = (lru_head *)malloc(sizeof(lru_head));
+    lruh_disk = (lru_head *)malloc(sizeof(lru_head));
+    lruh->head = NULL;
+    lruh->tail = NULL;
+    lruh_disk->head = NULL;
+    lruh_disk->tail = NULL;
+
     return FC_OK;
 }
 
@@ -810,6 +840,12 @@ uint64_t
 slab_nevict(void)
 {
     return nevict;
+}
+
+uint64_t
+slab_nflsuh(void)
+{
+    return nflush;
 }
 
 uint8_t

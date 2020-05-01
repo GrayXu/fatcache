@@ -129,8 +129,10 @@ itemx_init(void)
         STAILQ_INIT(&itx_table[i]);
     }
 
-    n = settings.max_index_memory / sizeof(struct itemx);
+    log_debug(LOG_DEBUG, "index memory info: %ld, size of itemx %ld",
+        settings.max_index_memory, sizeof(struct itemx));
 
+    n = settings.max_index_memory / sizeof(struct itemx);
     /* init item index memory */
     itx = fc_mmap(settings.max_index_memory);
     if (itx == NULL) {
