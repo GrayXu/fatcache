@@ -20,6 +20,8 @@
 
 #define ITEMX_HASH_POWER    20
 
+#define USE_HOTRING 1
+
 struct itemx {
     STAILQ_ENTRY(itemx) tqe;    /* link in index / free q */
     uint8_t             md[20]; /* sha1 message digest */
@@ -30,7 +32,14 @@ struct itemx {
 } __attribute__ ((__packed__));
 
 
-STAILQ_HEAD(itemx_tqh, itemx);
+// redesign itemx bucket info
+struct itemx_tqh {                                                           
+    struct itemx *stqh_first; /* first element */
+    struct itemx **stqh_last; /* addr of last next element */ 
+    uint8_t nhr_queries;     /* hotring query times */
+};
+
+// STAILQ_HEAD(itemx_tqh, itemx);
 
 rstatus_t itemx_init(void);
 void itemx_deinit(void);
@@ -39,7 +48,11 @@ bool itemx_empty(void);
 bool itemx_expired(struct itemx *itx);
 struct itemx *itemx_getx(uint32_t hash, uint8_t *md);
 void itemx_putx(uint32_t hash, uint8_t *md, uint32_t sid, uint32_t ioff, rel_time_t expiry, uint64_t cas);
-bool itemx_removex(uint32_t hash, uint8_t *md);
+bool itemx_removex(uint32_t hash, uint8_t* md);
+
+void hotring_insert(struct itemx_tqh * bucket, struct itemx* new);
+struct itemx* hotring_get(struct itemx_tqh* bucket, uint8_t* query_md);
+struct itemx* _hotring_get(struct itemx* now, uint8_t* query_md, bool rm);
 
 uint64_t itemx_nalloc(void);
 uint64_t itemx_nfree(void);

@@ -10,9 +10,13 @@
 - [ ] Automationshell scripts to build, run and test. *And even tune hyper-parameters?*
 - [x] In-mem data in-place update  
 - [x] double-linked list LRU for slab evict and flush
+- [x] simplified HotRing[1] index structure to reduce index searching cost.
 - [ ] make the hot-cold distribution in slabs not uniform
 
 thanks to [git-hulk/fatcache-note](https://github.com/git-hulk/fatcache-note)
+
+## refer
+[1] Chen, Jiqiang, et al. "HotRing: A Hotspot-Aware In-Memory Key-Value Store." 18th *USENIX* Conference on File and Storage Technologies (*FAST* 20). 2020.
 
 ---
 

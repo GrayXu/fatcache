@@ -250,7 +250,7 @@ req_process_set(struct context *ctx, struct conn *conn, struct msg *msg)
         return;
     }
 
-    itemx_removex(msg->hash, msg->md);//直接清除了原来的索引，之后会创建一个索引，看上去是直接做异地更新
+    itemx_removex(msg->hash, msg->md);
 
     it = item_get(key, nkey, cid, msg->vlen, time_reltime(msg->expiry),
                   msg->flags, msg->md, msg->hash);
