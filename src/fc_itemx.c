@@ -302,7 +302,7 @@ hotring_insert(struct itemx *head, struct itemx *new)
 
 //内部递归
 struct itemx * 
-_hotring_get(struct itemx *head， struct itemx *now, uint8_t * query_md)
+_hotring_get(struct itemx *head, struct itemx *now, uint8_t * query_md)
 {
     if (memcmp(now->md, query_md, sizeof(head->md))) {
         return head;
