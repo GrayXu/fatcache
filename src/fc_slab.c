@@ -19,6 +19,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#define USE_LRU 0
+
 extern struct settings settings;
 
 // 大量尾队列出没
@@ -250,7 +252,7 @@ slab_evict(void)
     ASSERT(nfull_dsinfoq > 0);
 
     // sinfo = TAILQ_FIRST(&full_dsinfoq); //old version
-    if (lruh_disk->head) {
+    if (lruh_disk->head && USE_LRU) {
         sinfo = lruh_disk->head;
         lru_remove_head(lruh_disk);
     }else{
@@ -338,7 +340,7 @@ _slab_drain(void)
     //因为fatcache的设计保证常写的数据自然在内存上，所以这里应该去做优化读取
     //slab粒度比较大，直接做简单严格LRU
     // msinfo = TAILQ_FIRST(&full_msinfoq); // old version FIFO
-    if (lruh->head) {
+    if (lruh->head && USE_LRU) {
         msinfo = lruh->head;
         lru_remove_head(lruh);
     }else{
@@ -464,6 +466,15 @@ _slab_get_item(uint8_t cid)
     log_debug(LOG_VERB, "get it at offset %" PRIu32 " with cid %" PRIu8 "",
         it->offset, it->cid);
 
+    //for lru
+    if (slab_full(sinfo) && USE_LRU) {
+        if (sinfo->mem) {
+            lru_set(lruh, sinfo);
+        } else {
+            lru_set(lruh_disk, sinfo);
+        }
+    }
+
     return it;
 }
 
@@ -577,22 +588,18 @@ slab_read_item(uint32_t sid, uint32_t addr)
     }
     it = (struct item*)(readbuf + (off - aligned_off));
 
-    //successfully read item, mark this slab in LRU list O(1)
-    //make sure this sinfo is a full slab
-    if (slab_full(sinfo)) {
-        if (sinfo->mem) {
-            lru_set(lruh, sinfo);
-        } else {
-            lru_set(lruh_disk, sinfo);
-        }
-    }
+    // if (slab_full(sinfo)) {
+    //     if (sinfo->mem) {
+    //         lru_set(lruh, sinfo);
+    //     } else {
+    //         lru_set(lruh_disk, sinfo);
+    //     }
+    // }
 
 done:
     ASSERT(it->magic == ITEM_MAGIC);
     ASSERT(it->cid == sinfo->cid);
     ASSERT(it->sid == sinfo->sid);
-
-    
 
     return it;
 }
@@ -929,7 +936,7 @@ void lru_set(lru_head* lru, struct slabinfo* item)
     // output!!!
     struct slabinfo* tmp = lru->head;
     while (tmp){
-        log_debug(LOG_DEBUG, "lru:%d,", tmp->sid);
+        log_debug(LOG_ALERT, "lru:%d,", tmp->sid);
         tmp = tmp->next;
     }
 }

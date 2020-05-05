@@ -41,7 +41,7 @@ typedef struct Hole_item{
 typedef struct Lru_head{
     struct slabinfo * head;
     struct slabinfo * tail;
-}lru_head;
+} lru_head;
 
 struct slabinfo {
     uint32_t              sid;    /* slab id (const) */

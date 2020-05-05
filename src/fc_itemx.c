@@ -288,3 +288,38 @@ itemx_nfree(void)
 {
     return nfree_itemxq;
 }
+
+/**
+ * simple HotRing design
+ */
+void 
+hotring_insert(struct itemx *head, struct itemx *new)
+{
+    struct itemx * next = head->tqe.stqe_next;
+    head->tqe.stqe_next = new;
+    new->tqe.stqe_next = next;
+}
+
+//内部递归
+struct itemx * 
+_hotring_get(struct itemx *head， struct itemx *now, uint8_t * query_md)
+{
+    if (memcmp(now->md, query_md, sizeof(head->md))) {
+        return head;
+    }else if(now == head){//reach end
+        return NULL;
+    }else {
+        return _hotring_get(head, now->tqe.stqe_next, query_md);
+    }
+    
+}
+
+struct itemx * 
+hotring_get(struct itemx *head, uint8_t * query_md)
+{
+    if (memcmp(head->md, query_md, sizeof(head->md))) {
+        return head;
+    }else{
+        return _hotring_get(head, head->tqe.stqe_next, query_md);
+    }
+}

@@ -29,6 +29,7 @@ struct itemx {
     uint64_t            cas;    /* cas */
 } __attribute__ ((__packed__));
 
+
 STAILQ_HEAD(itemx_tqh, itemx);
 
 rstatus_t itemx_init(void);
