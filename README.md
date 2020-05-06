@@ -1,4 +1,4 @@
-# fatcache [![Build Status](https://travis-ci.org/GrayXu/fatcache.png?branch=master)](https://travis-ci.org/GrayXu/fatcache)
+# fatcache [![Build Status](https://travis-ci.org/GrayXu/fattercache.png?branch=master)](https://travis-ci.org/GrayXu/fatcache)
 
 **fatcache** is memcache on SSD. Use cheaper flash SSD to increase cache **size** and finally increase **hit rates**.
 
