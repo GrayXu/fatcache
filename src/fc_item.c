@@ -60,16 +60,18 @@ item_slabcid(uint8_t nkey, uint32_t ndata)
     return cid;
 }
 
-//插入一个item！
+//插入一个item，根据update bool值来判断是否是做的更新，如果是更新则放入热slab上
+//param update is used for data hotness detection
 struct item *
 item_get(uint8_t *key, uint8_t nkey, uint8_t cid, uint32_t ndata,
-         rel_time_t expiry, uint32_t flags, uint8_t *md, uint32_t hash)
+         rel_time_t expiry, uint32_t flags, uint8_t *md, uint32_t hash, bool update)
 {
     struct item *it;
 
     ASSERT(slab_valid_id(cid));
 
-    it = slab_get_item(cid);//根据定位到的slab class，来获得某一个slab上一个空闲的item位置
+    //根据定位到的slab class，来获得某一个slab上一个空闲的item位置（注意update
+    it = slab_get_item(cid, update);
 
     if (it == NULL) {
         log_warn("server error on allocating item in slab %"PRIu8, cid);
@@ -110,6 +112,7 @@ item_init(void)
     cas_id = 0ULL;
 }
 
+//no need to deconstruct
 void
 item_deinit(void)
 {

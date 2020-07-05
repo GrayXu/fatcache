@@ -7,16 +7,16 @@
 - [ ] Async disk I/O. [polyu-szy/Fatcache-Async-2017](https://github.com/polyu-szy/Fatcache-Async-2017) may have some insights. **For now, multi-instances and consistent hash would be a great temp solution.**
 - [x] Implemented by githulk in this [pr](https://github.com/twitter/fatcache/commit/f7d45af57b0aac79d176bc97c3df73968e7faaa1). ~~stats command~~
 - [x] Reuse deleted item space to save memory & SSD space, especially for write intensive workloads.  
-- [ ] Automationshell scripts to build, run and test. *And even tune hyper-parameters?*
 - [x] In-mem data in-place update  
 - [x] double-linked list LRU for slab evict and flush
 - [x] simplified HotRing[1] index structure to reduce index searching cost.
-- [ ] make the hot-cold distribution in slabs not uniform
+- [x] use hot slab to stores updated kv data, which makes the hot-cold distribution in slabs not uniform. This design refers to HashKV[2].
 
 thanks to [git-hulk/fatcache-note](https://github.com/git-hulk/fatcache-note)
 
 ## refer
-[1] Chen, Jiqiang, et al. "HotRing: A Hotspot-Aware In-Memory Key-Value Store." 18th *USENIX* Conference on File and Storage Technologies (*FAST* 20). 2020.
+[1] Chen, Jiqiang, et al. "HotRing: A Hotspot-Aware In-Memory Key-Value Store." 18th *USENIX* Conference on File and Storage Technologies (*FAST* 20)   
+[2] Helen H. W. Chan, Yongkun Li, Patrick P. C. Lee, Yinlong Xu. "HashKV: Enabling Efficient Updates in KV Storage via Hashing" 2018 USENIX Annual Technical Conference (*ATC 2018*)
 
 ---
 

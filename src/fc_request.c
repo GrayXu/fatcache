@@ -250,10 +250,11 @@ req_process_set(struct context *ctx, struct conn *conn, struct msg *msg)
         return;
     }
 
-    itemx_removex(msg->hash, msg->md);
-
+    //判断是否做了更新。
+    bool get_result = itemx_removex(msg->hash, msg->md);
     it = item_get(key, nkey, cid, msg->vlen, time_reltime(msg->expiry),
-                  msg->flags, msg->md, msg->hash);
+            msg->flags, msg->md, msg->hash, get_result);
+    
     if (it == NULL) {
         rsp_send_error(ctx, conn, msg, MSG_RSP_SERVER_ERROR, ENOMEM);
         return;
@@ -363,11 +364,11 @@ req_process_concat(struct context *ctx, struct conn *conn, struct msg *msg)
     }
 
     /* 3). remove existing itemx of oit */
-    itemx_removex(msg->hash, msg->md);
+    // itemx_removex(msg->hash, msg->md);
 
     /* 4). alloc new item that can hold ndata worth of bytes */
     it = item_get(key, nkey, cid, ndata, time_reltime(msg->expiry),
-                  msg->flags, msg->md, msg->hash);
+                  msg->flags, msg->md, msg->hash, itemx_removex(msg->hash, msg->md));
     if (it == NULL) {
         rsp_send_error(ctx, conn, msg, MSG_RSP_SERVER_ERROR, ENOMEM);
         return;
@@ -430,7 +431,7 @@ req_process_num(struct context *ctx, struct conn *conn, struct msg *msg)
     }
 
     /* 4). remove existing itemx of it */
-    itemx_removex(msg->hash, msg->md);
+    bool remove_result = itemx_removex(msg->hash, msg->md);
 
     /* 5). compute the new incr/decr number nnum and numstr */
     if (msg->type == MSG_REQ_INCR) {
@@ -449,7 +450,7 @@ req_process_num(struct context *ctx, struct conn *conn, struct msg *msg)
     ASSERT(cid != SLABCLASS_INVALID_ID);
 
     it = item_get(key, nkey, cid, n, time_reltime(msg->expiry), msg->flags,
-                   msg->md, msg->hash);
+                   msg->md, msg->hash, remove_result);
     if (it == NULL) {
         rsp_send_error(ctx, conn, msg, MSG_RSP_SERVER_ERROR, ENOMEM);
         return;

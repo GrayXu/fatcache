@@ -19,11 +19,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define USE_LRU 0
+#define USE_LRU 1
 
 extern struct settings settings;
 
-// 大量尾队列出没
 static uint32_t nfree_msinfoq; /* # free memory slabinfo q */
 static struct slabhinfo free_msinfoq; /* free memory slabinfo q */
 static uint32_t nfull_msinfoq; /* # full memory slabinfo q */
@@ -415,23 +414,31 @@ slab_drain(void)
     return _slab_drain();
 }
 
-//从partial slab中取位置来放item
+// get item space from the first partial slab
 static struct item*
-_slab_get_item(uint8_t cid)
+_slab_get_item(uint8_t cid, bool update)
 {
-    struct slabclass* c; //这个slab在的辣个class
+    struct slabclass* c; 
     struct slabinfo* sinfo;
     struct slab* slab;
     struct item* it;
 
     ASSERT(cid >= SLABCLASS_MIN_ID && cid < nctable);
-    c = &ctable[cid]; //ctable是一个全局表，通过cid来获得slab class
+    c = &ctable[cid]; //ctable is a global table. get slab class by cid
 
-    /* allocate new item from partial slab */
-    ASSERT(!TAILQ_EMPTY(&c->partial_msinfoq));
-    //partial_msinfoq是尾队列的head info，第一个partial slab被取出
-    sinfo = TAILQ_FIRST(&c->partial_msinfoq);
-    ASSERT(!slab_full(sinfo));
+    // get slab info
+    if (update == true) {
+        sinfo = c->hot_slabinfo;
+        log_debug(LOG_VERB, "use hot slab");
+        ASSERT(sinfo != NULL);
+        ASSERT(!slab_full(sinfo));
+    } else {
+        /* allocate new item from partial slab */
+        ASSERT(!TAILQ_EMPTY(&c->partial_msinfoq));
+        //partial_msinfoq是尾队列的head info，第一个partial slab被取出
+        sinfo = TAILQ_FIRST(&c->partial_msinfoq);
+        ASSERT(!slab_full(sinfo));
+    }
 
     slab = slab_from_maddr(sinfo->addr, true); //拿到slab！
 
@@ -452,13 +459,16 @@ _slab_get_item(uint8_t cid)
     }
 
     it->sid = slab->sid;
-
     sinfo->nalloc++;
 
-    //partial slab满了退役
+    //deal with full partial slab situations
     if (slab_full(sinfo)) {
-        /* move memory slab from partial to full q */
-        TAILQ_REMOVE(&c->partial_msinfoq, sinfo, tqe);
+        if (update == true) {
+            c->hot_slabinfo = NULL;//mark as NULL
+        } else {
+            /* move memory slab from partial to full q */
+            TAILQ_REMOVE(&c->partial_msinfoq, sinfo, tqe);
+        }
         nfull_msinfoq++;
         TAILQ_INSERT_TAIL(&full_msinfoq, sinfo, tqe);
     }
@@ -466,7 +476,8 @@ _slab_get_item(uint8_t cid)
     log_debug(LOG_VERB, "get it at offset %" PRIu32 " with cid %" PRIu8 "",
         it->offset, it->cid);
 
-    //for lru
+    //for LRU (it's write-sensitve, because flash storage can also provide ideal read performance)
+    //two LRU double-linked list 
     if (slab_full(sinfo) && USE_LRU) {
         if (sinfo->mem) {
             lru_set(lruh, sinfo);
@@ -479,8 +490,10 @@ _slab_get_item(uint8_t cid)
 }
 
 //从slab class里先找一个合适的slab，再通过slab拿一个位置来放item
+//根据传入的update参数来决定是否放入热slab上
+//这个函数的功能只是调整下slab的可用性
 struct item*
-slab_get_item(uint8_t cid)
+slab_get_item(uint8_t cid, bool update)
 {
     rstatus_t status;
     struct slabclass* c;
@@ -498,12 +511,51 @@ slab_get_item(uint8_t cid)
         }
     }
 
-    if (!TAILQ_EMPTY(&c->partial_msinfoq)) {
-        return _slab_get_item(cid);
+    //热数据返回热slab上的item位置
+    if (update == true) {
+        if (c->hot_slabinfo == NULL) { // this class has no hot slab
+            if (!TAILQ_EMPTY(&free_msinfoq)) { // any free slab?
+                /* move memory slab from free to partial q */
+                sinfo = TAILQ_FIRST(&free_msinfoq);
+
+                ASSERT(nfree_msinfoq > 0);
+                nfree_msinfoq--;
+                c->nmslab++;
+                TAILQ_REMOVE(&free_msinfoq, sinfo, tqe);
+
+                /* init hot slab */
+                sinfo->nalloc = 0;
+                sinfo->cid = cid;
+                c->hot_slabinfo = sinfo;                
+                slab = slab_from_maddr(sinfo->addr, false);
+                slab->magic = SLAB_MAGIC;
+                slab->cid = cid;
+                /* unused[] is left uninitialized */
+                slab->sid = sinfo->sid;
+                /* data[] is initialized on-demand */
+
+                return _slab_get_item(cid, update); // get item space from hot slab
+            } else {
+                status = slab_drain(); // move a slab *to disk
+                if (status != FC_OK) {
+                    return NULL;
+                } else {
+                    return slab_get_item(cid, update); // successfully moved, and retry this process
+                }
+            }
+        } else {
+            // 注意这里的hot slab一定是非满的
+            return _slab_get_item(cid, update); // get item space from hot slab
+
+        }
     }
 
+    if (!TAILQ_EMPTY(&c->partial_msinfoq)) {
+        return _slab_get_item(cid, update);
+    }
+    
     if (!TAILQ_EMPTY(&free_msinfoq)) {
-        //partial的没了，只能用free的
+        //no partial slabs, use free
         /* move memory slab from free to partial q */
         sinfo = TAILQ_FIRST(&free_msinfoq);
 
@@ -530,7 +582,7 @@ slab_get_item(uint8_t cid)
         slab->sid = sinfo->sid;
         /* data[] is initialized on-demand */
 
-        return _slab_get_item(cid);
+        return _slab_get_item(cid, update);
     }
 
     ASSERT(!TAILQ_EMPTY(&full_msinfoq));
@@ -542,7 +594,7 @@ slab_get_item(uint8_t cid)
         return NULL;
     }
 
-    return slab_get_item(cid);
+    return slab_get_item(cid, update);
 }
 
 void slab_put_item(struct item* it)
@@ -588,14 +640,6 @@ slab_read_item(uint32_t sid, uint32_t addr)
     }
     it = (struct item*)(readbuf + (off - aligned_off));
 
-    // if (slab_full(sinfo)) {
-    //     if (sinfo->mem) {
-    //         lru_set(lruh, sinfo);
-    //     } else {
-    //         lru_set(lruh_disk, sinfo);
-    //     }
-    // }
-
 done:
     ASSERT(it->magic == ITEM_MAGIC);
     ASSERT(it->cid == sinfo->cid);
@@ -630,6 +674,7 @@ slab_init_ctable(void)
         c->ndslab = 0;
         c->nevict = 0;
         c->nused_item = 0;
+        c->hot_slabinfo = NULL;
     }
 
     return FC_OK;
@@ -664,7 +709,6 @@ slab_init_stable(void)
         sinfo->mem = 1;
         //init hole system
         sinfo->hole_head = NULL;
-
         nfree_msinfoq++;
         TAILQ_INSERT_TAIL(&free_msinfoq, sinfo, tqe);
     }
@@ -680,7 +724,6 @@ slab_init_stable(void)
         sinfo->cid = SLABCLASS_INVALID_ID;
         sinfo->mem = 0;
         sinfo->hole_head = NULL;
-
         nfree_dsinfoq++;
         TAILQ_INSERT_TAIL(&free_dsinfoq, sinfo, tqe);
     }
@@ -904,7 +947,6 @@ bool slab_incr_chunks_by_sid(uint32_t sid, int n)
 
 void lru_set(lru_head* lru, struct slabinfo* item)
 {   
-    log_debug(LOG_ALERT, "lru set sid:%d, after set:", item->sid);
     if (lru->head == NULL && lru->tail == NULL) { //fully empty lru list case
         lru->head = item;
         lru->tail = item;
@@ -931,13 +973,6 @@ void lru_set(lru_head* lru, struct slabinfo* item)
             old_pre->next = old_next;
             old_next->pre = old_pre;
         }
-    }
-
-    // output!!!
-    struct slabinfo* tmp = lru->head;
-    while (tmp){
-        log_debug(LOG_ALERT, "lru:%d,", tmp->sid);
-        tmp = tmp->next;
     }
 }
 

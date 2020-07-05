@@ -152,7 +152,7 @@ int put(char* key, int nkey, char* value, int vlen, int expiry, int flags){
 
     itemx_removex(hash, md);
     it = item_get(key, nkey, cid, vlen, time_reltime(expiry),
-                  flags, md, hash);
+                  flags, md, hash, false);
     if (it == NULL) {
         return -1;
     }
@@ -260,7 +260,7 @@ int num(char *src_key, int src_key_len, int num, int expiry, int flags){
     ASSERT(cid != SLABCLASS_INVALID_ID);
 
     it = item_get(pkey, nkey, cid, n, time_reltime(expiry), flags,
-                   md, hash);
+                   md, hash, false);
     if (it == NULL) {
         //rsp_send_error(ctx, conn, msg, MSG_RSP_SERVER_ERROR, ENOMEM);
         return -2;
