@@ -90,7 +90,7 @@ item_data(struct item *it)
 struct slab *item_to_slab(struct item *it);
 uint8_t item_slabcid(uint8_t nkey, uint32_t ndata);
 
-struct item *item_get(uint8_t *key, uint8_t nkey, uint8_t cid, uint32_t ndata, rel_time_t expiry, uint32_t dataflags,  uint8_t *md, uint32_t hash);
+struct item *item_get(uint8_t *key, uint8_t nkey, uint8_t cid, uint32_t ndata, rel_time_t expiry, uint32_t dataflags,  uint8_t *md, uint32_t hash, bool update);
 void item_put(struct item *it);
 
 void item_init(void);

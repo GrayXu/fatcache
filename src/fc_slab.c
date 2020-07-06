@@ -211,7 +211,7 @@ slab_to_daddr(struct slabinfo* sinfo)
 /*
  * Return and optionally verify the idx^th item with a given size in the
  * in given slab.
- * Note: idx == sinfo->nalloc 即已经分配了几个，size是这一级的大小
+ * Note: idx == sinfo->nalloc, size is for this class level
  * 
  */
 static struct item*
@@ -220,7 +220,7 @@ slab_to_item(struct slab* slab, uint32_t idx, size_t size, bool verify)
     struct item* it;
 
     ASSERT(slab->magic == SLAB_MAGIC);
-    ASSERT(idx <= stable[slab->sid].nalloc); //stable存info用的
+    ASSERT(idx <= stable[slab->sid].nalloc);
     ASSERT(idx * size < settings.slab_size);
 
     it = (struct item*)((uint8_t*)slab->data + (idx * size));
@@ -234,7 +234,7 @@ slab_to_item(struct slab* slab, uint32_t idx, size_t size, bool verify)
     return it;
 }
 
-//索引消耗完 or 全部disk slab被占满，需要做数据剔除
+//When there is no free indexs or slabs, evict data out of system
 static rstatus_t
 slab_evict(void)
 {   
@@ -335,9 +335,8 @@ _slab_drain(void)
 
     /* get memory sinfo from full q */
 
-    //从full队列里取出第一个做flush, FIFO
-    //因为fatcache的设计保证常写的数据自然在内存上，所以这里应该去做优化读取
-    //slab粒度比较大，直接做简单严格LRU
+    // flush the first item in full queue (FIFO)
+    // slab is kindof big granularity, so just use a simple implements instead of clock algorithm...
     // msinfo = TAILQ_FIRST(&full_msinfoq); // old version FIFO
     if (lruh->head && USE_LRU) {
         msinfo = lruh->head;
@@ -396,13 +395,13 @@ slab_drain(void)
 {
     rstatus_t status;
 
-    //disk里还有free的
+    // still have some free slabs in SSD
     if (!TAILQ_EMPTY(&free_dsinfoq)) {
         ASSERT(nfree_dsinfoq > 0);
         return _slab_drain();
     }
 
-    //disk里没有free的，做剔除，再刷入
+    // no free slabs in SSD, flush + evict
     status = slab_evict();
     if (status != FC_OK) {
         return status;
@@ -424,7 +423,7 @@ _slab_get_item(uint8_t cid, bool update)
     struct item* it;
 
     ASSERT(cid >= SLABCLASS_MIN_ID && cid < nctable);
-    c = &ctable[cid]; //ctable is a global table. get slab class by cid
+    c = &ctable[cid]; // ctable is a global table. get slab class by cid
 
     // get slab info
     if (update == true) {
@@ -435,7 +434,6 @@ _slab_get_item(uint8_t cid, bool update)
     } else {
         /* allocate new item from partial slab */
         ASSERT(!TAILQ_EMPTY(&c->partial_msinfoq));
-        //partial_msinfoq是尾队列的head info，第一个partial slab被取出
         sinfo = TAILQ_FIRST(&c->partial_msinfoq);
         ASSERT(!slab_full(sinfo));
     }
@@ -443,12 +441,12 @@ _slab_get_item(uint8_t cid, bool update)
     slab = slab_from_maddr(sinfo->addr, true); //拿到slab！
 
     /* consume an new item from partial slab's end area */
-    //use deleted area
+    // use deleted area
     if (sinfo->hole_head) {
         uint16_t hole_index = sinfo->hole_head->hole_index;
         hole_item* tmp = sinfo->hole_head;
         sinfo->hole_head = sinfo->hole_head->next;
-        //use this empty space to create a item
+        // use this empty space to create a item
         it = (struct item*)((uint8_t*)slab->data + (hole_index * c->size));
         it->offset = (uint32_t)((uint8_t*)it - (uint8_t*)slab);
         log_debug(LOG_VERB, "use deleted area");
@@ -461,7 +459,7 @@ _slab_get_item(uint8_t cid, bool update)
     it->sid = slab->sid;
     sinfo->nalloc++;
 
-    //deal with full partial slab situations
+    // deal with full partial slab situations
     if (slab_full(sinfo)) {
         if (update == true) {
             c->hot_slabinfo = NULL;//mark as NULL
@@ -476,8 +474,8 @@ _slab_get_item(uint8_t cid, bool update)
     log_debug(LOG_VERB, "get it at offset %" PRIu32 " with cid %" PRIu8 "",
         it->offset, it->cid);
 
-    //for LRU (it's write-sensitve, because flash storage can also provide ideal read performance)
-    //two LRU double-linked list 
+    // for LRU (it's write-sensitve, because flash storage can also provide ideal read performance)
+    // two LRU double-linked list 
     if (slab_full(sinfo) && USE_LRU) {
         if (sinfo->mem) {
             lru_set(lruh, sinfo);
@@ -489,9 +487,9 @@ _slab_get_item(uint8_t cid, bool update)
     return it;
 }
 
-//从slab class里先找一个合适的slab，再通过slab拿一个位置来放item
-//根据传入的update参数来决定是否放入热slab上
-//这个函数的功能只是调整下slab的可用性
+// get a proper slab in this slab class, and then get a space from slab to store this item
+// "update" param would decide to store on hot slab or not
+// this func is only for make sure there is a usable slab (partial slab or hot slab)
 struct item*
 slab_get_item(uint8_t cid, bool update)
 {
@@ -511,7 +509,7 @@ slab_get_item(uint8_t cid, bool update)
         }
     }
 
-    //热数据返回热slab上的item位置
+    //hot data would return item address in hot slab
     if (update == true) {
         if (c->hot_slabinfo == NULL) { // this class has no hot slab
             if (!TAILQ_EMPTY(&free_msinfoq)) { // any free slab?
@@ -544,7 +542,7 @@ slab_get_item(uint8_t cid, bool update)
                 }
             }
         } else {
-            // 注意这里的hot slab一定是非满的
+            // Note: the hot slab here must be partial
             return _slab_get_item(cid, update); // get item space from hot slab
 
         }
@@ -555,7 +553,7 @@ slab_get_item(uint8_t cid, bool update)
     }
     
     if (!TAILQ_EMPTY(&free_msinfoq)) {
-        //no partial slabs, use free
+        // no partial slabs, use free
         /* move memory slab from free to partial q */
         sinfo = TAILQ_FIRST(&free_msinfoq);
 
@@ -588,7 +586,7 @@ slab_get_item(uint8_t cid, bool update)
     ASSERT(!TAILQ_EMPTY(&full_msinfoq));
     ASSERT(nfull_msinfoq > 0);
 
-    //内存上的slab满啦
+    // memory slabs are all full
     status = slab_drain();
     if (status != FC_OK) {
         return NULL;

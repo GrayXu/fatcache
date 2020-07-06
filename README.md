@@ -1,18 +1,33 @@
-# fatcache [![Build Status](https://travis-ci.org/GrayXu/fattercache.png?branch=master)](https://travis-ci.org/GrayXu/fattercache)
+# fattercache [![Build Status](https://travis-ci.org/GrayXu/fattercache.png?branch=master)](https://travis-ci.org/GrayXu/fattercache)
 
-**fatcache** is memcache on SSD. Use cheaper flash SSD to increase cache **size** and finally increase **hit rates**.
+**fatcache** is memcache on SSD. Use cheaper flash SSD to increase cache **size** and finally increase **hit rates**.  
+**fattercache** is built upon fatcache, which increases slab memory usage efficiency, and uses a better eviction strategy based on LRU & hot slab.
+
+## New Feature
+
+- [x] stats command. Implemented by githulk in this [pr](https://github.com/twitter/fatcache/commit/f7d45af57b0aac79d176bc97c3df73968e7faaa1). 
+- [x] reuse deleted item space to save memory & SSD space, especially for write intensive workloads.  
+- [x] In-mem data in-place update  
+- [x] double-linked list LRU for slab evict and flush
+- [x] simplified HotRing[[1]](refer) index structure to reduce index searching cost.
+- [x] use hot slab to stores updated kv data, which makes the hot-cold distribution in slabs not uniform. This design refers to HashKV[[2]](refer).
 
 ## To-Do List
 
 - [ ] Async disk I/O. [polyu-szy/Fatcache-Async-2017](https://github.com/polyu-szy/Fatcache-Async-2017) may have some insights. **For now, multi-instances and consistent hash would be a great temp solution.**
-- [x] Implemented by githulk in this [pr](https://github.com/twitter/fatcache/commit/f7d45af57b0aac79d176bc97c3df73968e7faaa1). ~~stats command~~
-- [x] Reuse deleted item space to save memory & SSD space, especially for write intensive workloads.  
-- [x] In-mem data in-place update  
-- [x] double-linked list LRU for slab evict and flush
-- [x] simplified HotRing[1] index structure to reduce index searching cost.
-- [x] use hot slab to stores updated kv data, which makes the hot-cold distribution in slabs not uniform. This design refers to HashKV[2].
 
 thanks to [git-hulk/fatcache-note](https://github.com/git-hulk/fatcache-note)
+
+## Structure
+
+- slab structure  
+![slab结构空间.png](https://grayxu.cn-bj.ufileos.com/2020-07-06-10-01-36.png)
+
+- hash-index structure  
+![fatcache.png](https://grayxu.cn-bj.ufileos.com/2020-07-06-10-09-10.png)
+- LRU structure  
+![LRU.png](https://grayxu.cn-bj.ufileos.com/2020-07-06-10-09-13.png)
+
 
 ## refer
 [1] Chen, Jiqiang, et al. "HotRing: A Hotspot-Aware In-Memory Key-Value Store." 18th *USENIX* Conference on File and Storage Technologies (*FAST* 20)   
