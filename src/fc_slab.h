@@ -48,6 +48,7 @@ struct slabinfo {
     uint32_t              addr;   /* address as slab_size offset from memory / disk base */
     TAILQ_ENTRY(slabinfo) tqe;    /* link in free q / partial q / full q */
     uint32_t              nalloc; /* # item allocated (monotonic) */
+    //nfree is unused! just removed it to save mem
     // uint32_t              nfree;  /* # item freed (monotonic) */ //you can get it from c->nitem == sinfo->nalloc.
     uint8_t               cid;    /* class id */
     unsigned              mem:1;  /* memory? */
@@ -60,7 +61,7 @@ struct slabinfo {
 TAILQ_HEAD(slabhinfo, slabinfo);
 
 struct slabclass {
-    uint32_t         nitem;           /* # item per slab (const) 这个class里一个slab能放几个item*/
+    uint32_t         nitem;           /* # item per slab (const), how many items this slab class can store */
     size_t           size;            /* item size (const) */
     size_t           slack;           /* unusable slack space (const) */
     struct slabhinfo partial_msinfoq; /* partial slabinfo q */
@@ -68,6 +69,8 @@ struct slabclass {
     uint32_t         ndslab;          /* # disk slab */
     uint64_t         nevict;          /* # eviect time */
     uint64_t         nused_item;      /* # used item */
+    // struct slab * hot_slab;           /* this pointer aims a dynamic hot slab, this hot slab stores updated items */
+    struct slabinfo * hot_slabinfo;   /* this slab info is for hot slab, which has the same level as partial slab */
 };
 
 #define SLABCLASS_MIN_ID        0
@@ -84,7 +87,8 @@ size_t slab_data_size(void);
 void slab_print(void);
 uint8_t slab_cid(size_t size);
 
-struct item *slab_get_item(uint8_t cid);
+struct item *slab_get_item(uint8_t cid, bool update);
+
 void slab_put_item(struct item *it);
 struct item *slab_read_item(uint32_t sid, uint32_t addr);
 
